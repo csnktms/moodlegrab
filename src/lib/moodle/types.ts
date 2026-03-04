@@ -164,7 +164,6 @@ export interface UserSettings {
   defaultAsZip: boolean;
   zipNamePattern: string;
   theme: 'light' | 'dark' | 'system';
-  autoScanOnLoad: boolean;
   maxRetries: number;
 }
 
@@ -173,7 +172,6 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   defaultAsZip: true,
   zipNamePattern: '{courseName}_{date}',
   theme: 'system',
-  autoScanOnLoad: false,
   maxRetries: 3,
 };
 
