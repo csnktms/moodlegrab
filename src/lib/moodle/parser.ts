@@ -176,36 +176,56 @@ export function parseResourcesPage(doc: Document, courseName?: string): MoodleFi
   const files: MoodleFile[] = [];
   const seen = new Set<string>();
 
-  // The resources page typically has a table with links
-  const links = doc.querySelectorAll('table a[href], .generaltable a[href], .resourceworkaround a[href]');
-  for (const link of links) {
-    const href = (link as HTMLAnchorElement).href;
-    if (!href || seen.has(href)) continue;
-    if (!isResourceUrl(href)) continue;
+  // Try row-by-row table parsing first to properly handle rowspan sections
+  const table = doc.querySelector('table.generaltable, table');
+  if (table) {
+    const rows = table.querySelectorAll('tbody tr, tr');
+    let currentSection: string | undefined;
 
-    seen.add(href);
+    for (const row of rows) {
+      const cells = row.querySelectorAll('td');
+      if (cells.length === 0) continue;
 
-    // For wrapper URLs, use link text as the filename
-    const isWrapperUrl =
-      href.includes('/mod/resource/view.php') || href.includes('/mod/assign/view.php');
-    const linkText = link.textContent?.trim();
-    const urlFilename = extractFilename(href);
-    const name = isWrapperUrl && linkText ? linkText : urlFilename;
-    const extension = extractExtension(href) || guessExtensionFromName(name);
+      // If the first cell has a rowspan, it's a section header cell.
+      // If we have 2+ cells and the first cell has rowspan or contains no links, it's section info.
+      const firstCell = cells[0];
+      const hasRowspan = firstCell.hasAttribute('rowspan');
+      const firstCellHasLink = firstCell.querySelector('a[href]') !== null;
 
-    // Try to get section from the table row
-    const row = link.closest('tr');
-    const sectionCell = row?.querySelector('td:first-child, .c0');
-    const sectionName = sectionCell?.textContent?.trim() || undefined;
+      if (cells.length >= 2 && (hasRowspan || !firstCellHasLink)) {
+        // First cell is the section name
+        const sectionText = firstCell.textContent?.trim();
+        if (sectionText) {
+          currentSection = sectionText;
+        }
+      }
 
-    files.push({
-      id: nextId(),
-      name,
-      url: href,
-      extension,
-      courseName,
-      sectionName,
-    });
+      // Find resource links in this row
+      const links = row.querySelectorAll('a[href]');
+      for (const link of links) {
+        const href = (link as HTMLAnchorElement).href;
+        if (!href || seen.has(href)) continue;
+        if (!isResourceUrl(href)) continue;
+
+        seen.add(href);
+
+        const isWrapperUrl =
+          href.includes('/mod/resource/view.php') || href.includes('/mod/assign/view.php');
+        const linkText = link.textContent?.trim();
+        const urlFilename = extractFilename(href);
+        const name = isWrapperUrl && linkText ? linkText : urlFilename;
+        const extension = extractExtension(href) || guessExtensionFromName(name);
+
+        files.push({
+          id: nextId(),
+          name,
+          url: href,
+          extension,
+          courseName,
+          sectionName: currentSection,
+        });
+      }
+    }
   }
 
   // Fallback to full page scan if table yielded nothing
