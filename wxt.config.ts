@@ -12,7 +12,6 @@ export default defineConfig({
     description: 'Download all your Moodle course files in one click',
     permissions: ['activeTab', 'scripting', 'storage', 'sidePanel', 'downloads'],
     action: {},
-    // @ts-expect-error -- side_panel is valid for MV3 but not yet in WXT types
     side_panel: {
       default_path: 'sidepanel.html',
     },
