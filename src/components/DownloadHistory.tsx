@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Package, Trash2, Clock, Inbox } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Package, Trash2, Clock, Inbox, AlertTriangle, RotateCcw } from 'lucide-react';
 import type { DownloadHistoryEntry } from '@/lib/moodle/types';
 import { getHistory, clearHistory } from '@/lib/storage';
 import { formatFileSize } from '@/lib/utils';
@@ -19,12 +19,20 @@ function formatRelativeTime(timestamp: number): string {
 export default function DownloadHistory() {
   const [history, setHistory] = useState<DownloadHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadHistory = useCallback(() => {
+    setLoading(true);
+    setError(null);
     getHistory()
       .then(setHistory)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load history'))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
 
   const handleClear = async () => {
     await clearHistory();
@@ -35,6 +43,25 @@ export default function DownloadHistory() {
     return (
       <div className="flex items-center justify-center py-8">
         <Clock className="h-5 w-5 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <AlertTriangle className="h-10 w-10 text-gray-300 dark:text-gray-600 mb-3" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">Could not load history</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-xs break-words">
+          {error}
+        </p>
+        <button
+          onClick={loadHistory}
+          className="mt-4 flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Retry
+        </button>
       </div>
     );
   }

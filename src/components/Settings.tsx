@@ -1,15 +1,24 @@
-import { useState, useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Loader2, AlertTriangle, RotateCcw } from 'lucide-react';
 import type { UserSettings } from '@/lib/moodle/types';
 import { getSettings, saveSettings } from '@/lib/storage';
 import { applyTheme } from '@/lib/theme';
 
 export default function Settings() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSettings = useCallback(() => {
+    setSettings(null);
+    setError(null);
+    getSettings()
+      .then(setSettings)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load settings'));
+  }, []);
 
   useEffect(() => {
-    getSettings().then(setSettings);
-  }, []);
+    loadSettings();
+  }, [loadSettings]);
 
   const update = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
     if (!settings) return;
@@ -18,6 +27,25 @@ export default function Settings() {
     saveSettings({ [key]: value });
     if (key === 'theme') applyTheme(value as UserSettings['theme']);
   };
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <AlertTriangle className="h-10 w-10 text-gray-300 dark:text-gray-600 mb-3" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">Could not load settings</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-xs break-words">
+          {error}
+        </p>
+        <button
+          onClick={loadSettings}
+          className="mt-4 flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (!settings) {
     return (

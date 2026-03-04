@@ -5,9 +5,11 @@ import {
   CheckCircle,
   XCircle,
   FileText,
+  FileX,
   Loader2,
   RefreshCw,
   Clock,
+  AlertTriangle,
   Settings as SettingsIcon,
 } from 'lucide-react';
 import type { MoodleFile, MoodleDetectionResult, QueueProgress } from '@/lib/moodle/types';
@@ -25,6 +27,8 @@ export default function App() {
   const [files, setFiles] = useState<MoodleFile[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [hasScanned, setHasScanned] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<QueueProgress | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +64,7 @@ export default function App() {
 
   const handleScan = useCallback(async () => {
     setScanning(true);
+    setScanError(null);
     try {
       const result = (await browser.runtime.sendMessage({
         type: 'scan-page',
@@ -69,9 +74,11 @@ export default function App() {
       setSelectedIds(new Set((result ?? []).map((f) => f.id)));
     } catch (err) {
       console.error('[MoodleGrab] Scan failed:', err);
+      setScanError(err instanceof Error ? err.message : 'Scan failed unexpectedly.');
       setFiles([]);
     } finally {
       setScanning(false);
+      setHasScanned(true);
     }
   }, []);
 
@@ -183,8 +190,46 @@ export default function App() {
               </div>
             )}
 
-            {/* Moodle detected — scan button */}
-            {!loading && isMoodle && files.length === 0 && !scanning && (
+            {/* Scan error */}
+            {!loading && isMoodle && !scanning && scanError && (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <AlertTriangle className="h-10 w-10 text-gray-300 dark:text-gray-600 mb-3" />
+                <p className="text-sm text-gray-500 dark:text-gray-400">Scan failed</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-xs break-words">
+                  {scanError}
+                </p>
+                <button
+                  onClick={handleScan}
+                  className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Retry Scan
+                </button>
+              </div>
+            )}
+
+            {/* Scanned but no files found */}
+            {!loading && isMoodle && !scanning && !scanError && hasScanned && files.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <FileX className="h-10 w-10 text-gray-300 dark:text-gray-600 mb-3" />
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No downloadable files found on this page
+                </p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  Try navigating to a course page with resources.
+                </p>
+                <button
+                  onClick={handleScan}
+                  className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Scan Again
+                </button>
+              </div>
+            )}
+
+            {/* Moodle detected — scan button (not yet scanned) */}
+            {!loading && isMoodle && !scanning && !scanError && !hasScanned && files.length === 0 && (
               <button
                 onClick={handleScan}
                 className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
