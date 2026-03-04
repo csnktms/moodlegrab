@@ -16,4 +16,11 @@ export default defineConfig({
       default_path: 'sidepanel.html',
     },
   },
+  hooks: {
+    'build:manifestGenerated': (_wxt, manifest) => {
+      // Remove auto-generated host_permissions from runtime content script.
+      // We use activeTab + scripting.executeScript for on-demand injection.
+      manifest.host_permissions = [];
+    },
+  },
 });

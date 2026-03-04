@@ -10,8 +10,14 @@ import {
 import type { MoodleFile, MoodleDetectionResult } from '@/lib/moodle/types';
 
 export default defineContentScript({
-  matches: ['*://*/*'],
+  matches: ['<all_urls>'],
+  registration: 'runtime',
+  runAt: 'document_idle',
   main() {
+    // Prevent duplicate listeners on re-injection
+    if ((window as unknown as { __moodlegrab?: boolean }).__moodlegrab) return;
+    (window as unknown as { __moodlegrab?: boolean }).__moodlegrab = true;
+
     const detection = detectMoodle(document, window.location.href);
 
     if (!detection.isMoodle) return;

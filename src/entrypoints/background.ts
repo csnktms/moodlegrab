@@ -18,6 +18,8 @@ export default defineBackground(() => {
   // Open side panel when extension icon is clicked
   browser.action.onClicked.addListener(async (tab) => {
     if (tab.id) {
+      // Inject content script on-demand (requires activeTab + scripting)
+      await injectContentScript(tab.id);
       // @ts-expect-error -- sidePanel API types not yet in WXT
       await browser.sidePanel.open({ tabId: tab.id });
     }
@@ -88,6 +90,21 @@ function handleMoodleDetected(
 }
 
 /**
+ * Inject the content script into a tab on-demand.
+ * Uses activeTab + scripting permissions — no broad host permissions needed.
+ */
+async function injectContentScript(tabId: number): Promise<void> {
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId },
+      files: ['content-scripts/content.js'],
+    });
+  } catch {
+    // May fail on non-injectable pages (chrome://, extensions, etc.)
+  }
+}
+
+/**
  * Handle scan-page request: forward to the content script of the active tab.
  */
 async function handleScanPage(sender: { tab?: { id?: number } }): Promise<MoodleFile[]> {
@@ -98,6 +115,11 @@ async function handleScanPage(sender: { tab?: { id?: number } }): Promise<Moodle
     tabId = tab?.id;
   }
   if (!tabId) return [];
+
+  // Inject content script on-demand
+  await injectContentScript(tabId);
+  // Brief wait for moodle-detected message to arrive
+  await new Promise((r) => setTimeout(r, 50));
 
   try {
     const files = await browser.tabs.sendMessage(tabId, { type: 'scan-page' }) as MoodleFile[];
@@ -121,6 +143,13 @@ async function handleGetDetection(
     tabId = tab?.id;
   }
   if (!tabId) return null;
+
+  // Inject content script if we don't have cached detection
+  if (!tabDetections.has(tabId)) {
+    await injectContentScript(tabId);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
   return tabDetections.get(tabId) ?? null;
 }
 
