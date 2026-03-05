@@ -7,6 +7,10 @@ export interface ZipEntry {
   data: Uint8Array;
 }
 
+interface ZipTree {
+  [key: string]: ZipTree | Uint8Array;
+};
+
 /**
  * Build a ZIP path for a file, handling duplicate names.
  */
@@ -44,7 +48,6 @@ export function buildZipPath(
  */
 export function sanitizePathSegment(name: string): string {
   return name
-    // eslint-disable-next-line no-control-regex
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') // Remove invalid chars
     .replace(/\.+$/, '') // Remove trailing dots
     .replace(/\s+/g, ' ') // Collapse whitespace
@@ -78,22 +81,48 @@ export function createZipFromResults(
 }
 
 /**
+ * Ensures a directory exists inside a ZipTree node and returns it.
+ *
+ * In the fflate ZIP structure, directories are represented as nested objects,
+ * while files are stored as Uint8Array values. This helper checks whether the
+ * given key already exists:
+ *
+ * - If the entry is missing or is currently a file (Uint8Array), it creates
+ *   a new directory object and assigns it.
+ * - If the entry is already a directory, it simply returns it.
+ *
+ * This guarantees that callers always receive a ZipTree directory node,
+ * avoiding TypeScript union issues when traversing the tree.
+ */
+function getOrCreateDir(node: ZipTree, name: string): ZipTree {
+  const existing = node[name];
+
+  // if missing OR it's a file, replace with a directory
+  if (!existing || existing instanceof Uint8Array) {
+    const dir: ZipTree = {};
+    node[name] = dir;
+    return dir;
+  }
+
+  // here TS knows it's ZipTree (because not Uint8Array)
+  return existing;
+}
+
+/**
  * Create a ZIP file from entries using fflate.
  * fflate's zipSync expects nested objects for directory paths.
  */
 export function createZip(entries: ZipEntry[]): Uint8Array {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const root: Record<string, any> = {};
+  const root: ZipTree = {};
 
   for (const entry of entries) {
     const parts = entry.path.split('/');
     let current = root;
+    
     for (let i = 0; i < parts.length - 1; i++) {
-      if (!current[parts[i]] || current[parts[i]] instanceof Uint8Array) {
-        current[parts[i]] = {};
-      }
-      current = current[parts[i]];
+      current = getOrCreateDir(current, parts[i]);
     }
+    
     current[parts[parts.length - 1]] = entry.data;
   }
 
@@ -106,6 +135,7 @@ export function createZip(entries: ZipEntry[]): Uint8Array {
  */
 export function formatZipName(pattern: string, courseName: string): string {
   const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  
   return (
     sanitizePathSegment(
       pattern.replace('{courseName}', courseName).replace('{date}', date),

@@ -34,7 +34,6 @@ export function formatEta(seconds: number): string {
  */
 export function sanitizeFilename(name: string): string {
   return name
-    // eslint-disable-next-line no-control-regex
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
     .replace(/\.+$/, '')
     .replace(/\s+/g, ' ')
