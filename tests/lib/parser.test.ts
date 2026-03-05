@@ -6,6 +6,7 @@ import {
   parseCourseFiles,
   parseResourcesPage,
   parseFolderPage,
+  extractFolderLinks,
   extractFilesFromContainer,
   resetIdCounter,
 } from '../../src/lib/moodle/parser';
@@ -197,6 +198,156 @@ describe('parseFolderPage', () => {
 
     const files = parseFolderPage(doc);
     expect(files).toHaveLength(1);
+  });
+
+  it('tags files with folder name and section name', () => {
+    const html = `<html><body>
+      <div class="foldertree">
+        <a href="https://moodle.com/pluginfile.php/1/a.pdf">A</a>
+        <a href="https://moodle.com/pluginfile.php/2/b.docx">B</a>
+      </div>
+    </body></html>`;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const files = parseFolderPage(doc, 'Course', 'Week 1', 'Lab Material');
+    expect(files).toHaveLength(2);
+    expect(files[0].sectionName).toBe('Week 1');
+    expect(files[0].activityName).toBe('Lab Material');
+    expect(files[1].activityName).toBe('Lab Material');
+  });
+
+  it('does not overwrite existing activityName', () => {
+    const html = `<html><body>
+      <div class="foldertree">
+        <div class="activity">
+          <a href="https://moodle.com/pluginfile.php/1/a.pdf">
+            <span class="instancename">Specific Name</span>
+          </a>
+        </div>
+      </div>
+    </body></html>`;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const files = parseFolderPage(doc, 'Course', 'Week 1', 'Lab Material');
+    expect(files).toHaveLength(1);
+    expect(files[0].activityName).toBe('Specific Name');
+  });
+});
+
+describe('extractFolderLinks', () => {
+  it('extracts folder links from course page sections', () => {
+    const html = `<html><body>
+      <li class="section" id="section-0">
+        <h3 class="sectionname">Week 1</h3>
+        <div class="activity">
+          <a href="https://moodle.com/pluginfile.php/1/lecture.pdf">
+            <span class="instancename">Lecture</span>
+          </a>
+        </div>
+        <div class="activity">
+          <a href="https://moodle.com/mod/folder/view.php?id=10">
+            <span class="instancename">Lab Material</span>
+          </a>
+        </div>
+      </li>
+      <li class="section" id="section-1">
+        <h3 class="sectionname">Week 2</h3>
+        <div class="activity">
+          <a href="https://moodle.com/mod/folder/view.php?id=20">
+            <span class="instancename">Lecture Slides</span>
+          </a>
+        </div>
+      </li>
+    </body></html>`;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const folders = extractFolderLinks(doc);
+    expect(folders).toHaveLength(2);
+    expect(folders[0].name).toBe('Lab Material');
+    expect(folders[0].sectionName).toBe('Week 1');
+    expect(folders[0].url).toContain('id=10');
+    expect(folders[1].name).toBe('Lecture Slides');
+    expect(folders[1].sectionName).toBe('Week 2');
+  });
+
+  it('returns empty array when no folders exist', () => {
+    const html = `<html><body>
+      <li class="section">
+        <h3 class="sectionname">Week 1</h3>
+        <a href="https://moodle.com/pluginfile.php/1/file.pdf">File</a>
+      </li>
+    </body></html>`;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const folders = extractFolderLinks(doc);
+    expect(folders).toHaveLength(0);
+  });
+
+  it('deduplicates folder links', () => {
+    const html = `<html><body>
+      <li class="section">
+        <h3 class="sectionname">Week 1</h3>
+        <a href="https://moodle.com/mod/folder/view.php?id=10">Folder</a>
+        <a href="https://moodle.com/mod/folder/view.php?id=10">Same Folder</a>
+      </li>
+    </body></html>`;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const folders = extractFolderLinks(doc);
+    expect(folders).toHaveLength(1);
+  });
+
+  it('falls back to body scan when no sections or table found', () => {
+    const html = `<html><body>
+      <a href="https://moodle.com/mod/folder/view.php?id=10">
+        <span class="instancename">My Folder</span>
+      </a>
+    </body></html>`;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const folders = extractFolderLinks(doc);
+    expect(folders).toHaveLength(1);
+    expect(folders[0].sectionName).toBeUndefined();
+  });
+
+  it('extracts folder links from table-based resource page', () => {
+    const html = `<html><body>
+      <table class="generaltable mod_index">
+        <thead><tr><th>Tile</th><th>Name</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Week 1</td>
+            <td><a href="https://moodle.com/mod/resource/view.php?id=1">Coursework</a></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>Week 2</td>
+            <td><a href="https://moodle.com/mod/folder/view.php?id=10">Lab Material</a></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td></td>
+            <td><a href="https://moodle.com/mod/folder/view.php?id=20">Lecture 2 material</a></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>Week 3</td>
+            <td><a href="https://moodle.com/mod/folder/view.php?id=30">Lecture Material</a></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </body></html>`;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const folders = extractFolderLinks(doc);
+    expect(folders).toHaveLength(3);
+    expect(folders[0].name).toBe('Lab Material');
+    expect(folders[0].sectionName).toBe('Week 2');
+    expect(folders[1].name).toBe('Lecture 2 material');
+    expect(folders[1].sectionName).toBe('Week 2');
+    expect(folders[2].name).toBe('Lecture Material');
+    expect(folders[2].sectionName).toBe('Week 3');
   });
 });
 

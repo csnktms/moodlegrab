@@ -332,3 +332,52 @@ After each phase, verify by:
 5. `npm test` — all tests pass
 6. `npm build` — production build succeeds
 
+---
+
+## Current Progress (as of 2026-03-05)
+
+### Completed
+- **Phase 1**: Project scaffolded (WXT + React + Tailwind + Zustand + fflate + Lucide)
+- **Phase 2**: Core Moodle logic — detector, parser, crawler, downloader, types, zip, messaging, storage
+- **Phase 3**: Background service worker + content script with on-demand injection (no broad host permissions)
+- **Phase 4**: Side panel UI — file tree, download queue, filter bar, download history, settings, theme switcher
+- **Phase 5**: Popup as minimal launcher
+- **Phase 6 (partial)**: Error boundary, scan error states
+- **Store prep (partial)**: Extension icons, README, LICENSE, privacy policy, Chrome Web Store listing
+
+### Recently Fixed: Folder Activity Expansion
+- Folder activities (`/mod/folder/view.php`) are now auto-expanded during scan
+- Works on both `course-view` (section-based) and `course-resources` (table-based) pages
+- `extractFolderLinks()` in parser.ts handles 3 DOM strategies: li.section, table.generaltable, and body fallback
+- `fetchFolderContents()` in content.ts fetches each folder page via session cookies and parses files inside
+- Files from folders get `activityName` (folder name) and `sectionName` (week/tile name) metadata
+- **Verified working**: 20 folders expanded, 75 files found, downloaded successfully as ZIP
+- **Tested against**: Birkbeck Moodle (Moodle 4.x with Tiles format + LearnR theme)
+
+### Real-world Moodle quirks discovered
+- Birkbeck uses `/course/resources.php` as a table-based resource listing (not `li.section` layout)
+- Table uses "Tile" column for section/week name, with empty cells for subsequent rows in same section
+- Folder pages use `div.foldertree > div.filemanager` with `pluginfile.php` URLs + `?forcedownload=1`
+- Files inside folders include `.py` source files (matched by `pluginfile.php` URL pattern, not extension list)
+- S3-backed storage (AWS eu-west-2) with signed URLs for file downloads
+
+### Test Suite
+- 94 tests passing across 6 test files (parser, crawler, downloader, detector, utils, zip)
+- Tests cover: section-based pages, table-based resource pages, folder expansion, URL resolution, deduplication
+
+### Uncommitted Changes
+- `src/lib/utils.ts` — modified (pre-existing)
+- `src/lib/zip.ts` — modified (pre-existing)
+- `src/lib/moodle/parser.ts` — folder link extraction (extractFolderLinks, updated parseFolderPage)
+- `src/entrypoints/content.ts` — async scan with folder expansion (fetchFolderContents, deduplicateFiles)
+- `tests/lib/parser.test.ts` — new tests for extractFolderLinks and parseFolderPage with folder metadata
+
+### Still TODO
+- Incremental sync / "What's New" detection (Phase 6)
+- Keyboard shortcuts
+- Empty states with illustrations
+- Onboarding / first-time guide
+- Virtualized tree for large courses
+- Component tests (FileTree, DownloadQueue)
+- Store promotional images/screenshots
+

@@ -3,6 +3,7 @@ import {
   parseCourseFiles,
   parseResourcesPage,
   parseFolderPage,
+  extractFolderLinks,
   extractFilename,
   extractExtension,
   mimeToExtension,
@@ -36,9 +37,10 @@ export default defineContentScript({
         sendResponse: (response: unknown) => void,
       ) => {
         if (message.type === 'scan-page') {
-          const files = scanCurrentPage(detection);
-          console.log(`[MoodleGrab] Scanned page, found ${files.length} files. Resolving URLs...`);
-          resolveFileUrls(files).then((resolved) => {
+          scanCurrentPage(detection).then((files) => {
+            console.log(`[MoodleGrab] Scanned page, found ${files.length} files. Resolving URLs...`);
+            return resolveFileUrls(files);
+          }).then((resolved) => {
             console.log('[MoodleGrab] Resolved files:', resolved.map((f) => `${f.name} → ${f.url}`));
             sendResponse(resolved);
           });
@@ -104,16 +106,23 @@ async function fetchFileViaContentScript(
 
 /**
  * Scan the current page for downloadable files based on the detected page type.
+ * For course pages, also fetches files inside Folder activities.
  */
-function scanCurrentPage(detection: MoodleDetectionResult): MoodleFile[] {
+async function scanCurrentPage(detection: MoodleDetectionResult): Promise<MoodleFile[]> {
   const courseName = getCourseName();
 
   switch (detection.pageType) {
-    case 'course-view':
-      return parseCourseFiles(document, courseName).flatMap((s) => s.files);
+    case 'course-view': {
+      const files = parseCourseFiles(document, courseName).flatMap((s) => s.files);
+      const folderFiles = await fetchFolderContents(courseName);
+      return deduplicateFiles([...files, ...folderFiles]);
+    }
 
-    case 'course-resources':
-      return parseResourcesPage(document, courseName);
+    case 'course-resources': {
+      const resFiles = parseResourcesPage(document, courseName);
+      const resFolderFiles = await fetchFolderContents(courseName);
+      return deduplicateFiles([...resFiles, ...resFolderFiles]);
+    }
 
     case 'mod-folder':
       return parseFolderPage(document, courseName);
@@ -125,6 +134,52 @@ function scanCurrentPage(detection: MoodleDetectionResult): MoodleFile[] {
     default:
       return parseCourseFiles(document, courseName).flatMap((s) => s.files);
   }
+}
+
+/**
+ * Fetch all Folder activity pages linked from the current course page
+ * and extract the files inside them.
+ */
+async function fetchFolderContents(courseName?: string): Promise<MoodleFile[]> {
+  const folderLinks = extractFolderLinks(document);
+  if (folderLinks.length === 0) return [];
+
+  console.log(`[MoodleGrab] Found ${folderLinks.length} folder(s) to expand:`, folderLinks.map((f) => f.name));
+
+  const results = await Promise.allSettled(
+    folderLinks.map(async (folder) => {
+      const response = await fetch(folder.url, {
+        credentials: 'same-origin',
+      });
+      if (!response.ok) return [];
+
+      const html = await response.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      // Fix relative URLs by setting the base
+      const base = doc.createElement('base');
+      base.href = folder.url;
+      doc.head.prepend(base);
+
+      const files = parseFolderPage(doc, courseName, folder.sectionName, folder.name);
+      console.log(`[MoodleGrab] Folder "${folder.name}": found ${files.length} file(s)`);
+      return files;
+    }),
+  );
+
+  return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+}
+
+/**
+ * Remove duplicate files by URL.
+ */
+function deduplicateFiles(files: MoodleFile[]): MoodleFile[] {
+  const seen = new Set<string>();
+  return files.filter((f) => {
+    if (seen.has(f.url)) return false;
+    seen.add(f.url);
+    return true;
+  });
 }
 
 /**

@@ -279,10 +279,108 @@ export function mimeToExtension(mimeType: string): string {
 /**
  * Parse a folder view page (/mod/folder/view.php).
  */
-export function parseFolderPage(doc: Document, courseName?: string): MoodleFile[] {
+export function parseFolderPage(doc: Document, courseName?: string, sectionName?: string, folderName?: string): MoodleFile[] {
   const container = doc.querySelector('.foldertree, .filemanager, #folder_tree0, .box.generalbox');
-  if (!container) {
-    return extractFilesFromContainer(doc.body, courseName);
+  const files = extractFilesFromContainer(container ?? doc.body, courseName, sectionName);
+  // Tag files with the folder name as their activity name
+  if (folderName) {
+    for (const file of files) {
+      if (!file.activityName) {
+        file.activityName = folderName;
+      }
+    }
   }
-  return extractFilesFromContainer(container, courseName);
+  return files;
+}
+
+/** Info about a folder activity link found on a course page */
+export interface FolderLink {
+  url: string;
+  name: string;
+  sectionName?: string;
+}
+
+/**
+ * Extract folder activity links from a course page.
+ * These are links to /mod/folder/view.php that need to be fetched separately.
+ * Supports both section-based course pages and table-based resource pages.
+ */
+export function extractFolderLinks(doc: Document): FolderLink[] {
+  const folders: FolderLink[] = [];
+  const seen = new Set<string>();
+
+  const addFolder = (href: string, name: string, sectionName?: string) => {
+    if (seen.has(href)) return;
+    seen.add(href);
+    folders.push({ url: href, name, sectionName });
+  };
+
+  // Strategy 1: Section-based course page (li.section)
+  const sectionElements = doc.querySelectorAll(
+    'li.section, [data-region="section"], .course-section',
+  );
+
+  if (sectionElements.length > 0) {
+    sectionElements.forEach((el, index) => {
+      const headerEl = el.querySelector(
+        '.sectionname, .section-title, [data-region="section-title"], h3',
+      );
+      const sectionName = headerEl?.textContent?.trim() || `Section ${index + 1}`;
+      const links = el.querySelectorAll('a[href]');
+      for (const link of links) {
+        const href = (link as HTMLAnchorElement).href;
+        if (!href || !href.includes('/mod/folder/view.php')) continue;
+        const activityEl = link.closest('.activity, .activityinstance, [data-activityname]');
+        const name =
+          activityEl?.querySelector('.instancename, .activityname')?.textContent?.trim() ||
+          link.textContent?.trim() ||
+          'Folder';
+        addFolder(href, name, sectionName);
+      }
+    });
+    return folders;
+  }
+
+  // Strategy 2: Table-based resource page (course/resources.php)
+  const table = doc.querySelector('table.generaltable, table.mod_index');
+  if (table) {
+    const rows = table.querySelectorAll('tbody tr, tr');
+    let currentSection: string | undefined;
+
+    for (const row of rows) {
+      const cells = row.querySelectorAll('td');
+      if (cells.length === 0) continue;
+
+      // Track section name from the first column (Tile/Section column)
+      const firstCell = cells[0];
+      const firstCellText = firstCell.textContent?.trim();
+      if (firstCellText && cells.length >= 2) {
+        const firstCellHasLink = firstCell.querySelector('a[href]') !== null;
+        if (!firstCellHasLink || firstCell.hasAttribute('rowspan')) {
+          currentSection = firstCellText;
+        }
+      }
+
+      // Find folder links in this row
+      const links = row.querySelectorAll('a[href]');
+      for (const link of links) {
+        const href = (link as HTMLAnchorElement).href;
+        if (!href || !href.includes('/mod/folder/view.php')) continue;
+        const name = link.textContent?.trim() || 'Folder';
+        addFolder(href, name, currentSection);
+      }
+    }
+    return folders;
+  }
+
+  // Strategy 3: Fallback — scan the whole body
+  const links = doc.querySelectorAll('a[href]');
+  for (const link of links) {
+    const href = (link as HTMLAnchorElement).href;
+    if (!href || !href.includes('/mod/folder/view.php')) continue;
+    const name = link.textContent?.trim() || 'Folder';
+    addFolder(href, name);
+  }
+
+  return folders;
 }
