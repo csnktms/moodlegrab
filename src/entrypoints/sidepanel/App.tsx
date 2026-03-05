@@ -139,7 +139,6 @@ export default function App() {
       {/* Header */}
       <header className="border-b border-gray-200 dark:border-gray-700 shrink-0">
         <div className="flex items-center gap-2 px-4 py-3">
-          <Download className="h-5 w-5 text-blue-600" />
           <h1 className="text-lg font-semibold">MoodleGrab</h1>
           {isMoodle && (
             <span className="ml-auto text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
